@@ -19,3 +19,7 @@ npm-debug.log*
 
 stepguid.md
 QueueRegGuid.md
+
+.agents
+.claude
+.windsurf
