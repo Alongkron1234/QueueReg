@@ -5,12 +5,16 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { CreateSectionDto } from './dto/create-section.dto';
 
 @Injectable()
 export class CoursesService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redisService: RedisService,
+  ) {}
 
   async createCourse(dto: CreateCourseDto) {
     const existingCourse = await this.prisma.course.findUnique({
@@ -63,7 +67,7 @@ export class CoursesService {
       );
     }
 
-    return this.prisma.section.create({
+    const section = await this.prisma.section.create({
       data: {
         courseId: dto.courseId,
         sectionCode: dto.sectionCode,
@@ -73,6 +77,11 @@ export class CoursesService {
         registrationCloseAt: closeAt,
       },
     });
+
+    // Automatically Pre-load seat counter in Redis
+    await this.redisService.set(`seat_count:${section.id}`, section.maxCapacity);
+
+    return section;
   }
 
   async getAllCourses() {
@@ -101,5 +110,49 @@ export class CoursesService {
     }
 
     return course;
+  }
+
+  // Pre-load seats for a specific Section into Redis
+  async preloadSectionSeats(sectionId: string) {
+    const section = await this.prisma.section.findUnique({
+      where: { id: sectionId },
+    });
+
+    if (!section) {
+      throw new NotFoundException(`ไม่พบ Section ที่มี ID ${sectionId}`);
+    }
+
+    await this.redisService.set(`seat_count:${section.id}`, section.maxCapacity);
+
+    return {
+      message: 'Pre-load จำนวนที่นั่งลง Redis สำเร็จ',
+      sectionId: section.id,
+      maxCapacity: section.maxCapacity,
+      redisKey: `seat_count:${section.id}`,
+    };
+  }
+
+  // Fetch real-time remaining seats from Redis (with fallback to Postgres)
+  async getSectionRemainingSeats(sectionId: string) {
+    let seats = await this.redisService.get(`seat_count:${sectionId}`);
+
+    if (seats === null) {
+      // Auto-fallback & sync if Redis key is missing
+      const section = await this.prisma.section.findUnique({
+        where: { id: sectionId },
+      });
+
+      if (!section) {
+        throw new NotFoundException(`ไม่พบ Section ที่มี ID ${sectionId}`);
+      }
+
+      await this.redisService.set(`seat_count:${section.id}`, section.maxCapacity);
+      seats = section.maxCapacity.toString();
+    }
+
+    return {
+      sectionId,
+      remainingSeats: parseInt(seats, 10),
+    };
   }
 }

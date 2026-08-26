@@ -9,6 +9,7 @@ import { QueueModule } from './queue/queue.module';
 import { EventsModule } from './events/events.module';
 import { CommonModule } from './common/common.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { PrismaModule } from './prisma/prisma.module';
       envFilePath: ['../.env', '.env'],
     }),
     PrismaModule,
+    RedisModule,
     AuthModule,
     CoursesModule,
     RegistrationsModule,

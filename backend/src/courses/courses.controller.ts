@@ -25,6 +25,13 @@ export class CoursesController {
     return this.coursesService.createSection(dto);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @Post('admin/sections/:id/preload')
+  async preloadSectionSeats(@Param('id') id: string) {
+    return this.coursesService.preloadSectionSeats(id);
+  }
+
   // ---------------- STUDENT / PUBLIC ENDPOINTS ----------------
   @UseGuards(JwtAuthGuard)
   @Get('courses')
@@ -36,5 +43,11 @@ export class CoursesController {
   @Get('courses/:id/sections')
   async getCourseSections(@Param('id') id: string) {
     return this.coursesService.getCourseSections(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('courses/sections/:id/seats')
+  async getSectionRemainingSeats(@Param('id') id: string) {
+    return this.coursesService.getSectionRemainingSeats(id);
   }
 }
