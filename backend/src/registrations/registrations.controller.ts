@@ -1,7 +1,9 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
+  Param,
   UseGuards,
   Request,
   HttpCode,
@@ -9,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { RegistrationsService } from './registrations.service';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
+import { CancelRegistrationDto } from './dto/cancel-registration.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RateLimiterGuard } from '../common/guards/rate-limiter.guard';
 
@@ -26,5 +29,23 @@ export class RegistrationsController {
     @Body() dto: CreateRegistrationDto,
   ) {
     return this.registrationsService.submitRegistration(req.user, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':requestId/status')
+  async getRegistrationStatus(
+    @Request() req: any,
+    @Param('requestId') requestId: string,
+  ) {
+    return this.registrationsService.getRegistrationStatus(req.user, requestId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('cancel')
+  async cancelRegistration(
+    @Request() req: any,
+    @Body() dto: CancelRegistrationDto,
+  ) {
+    return this.registrationsService.cancelRegistration(req.user, dto);
   }
 }
