@@ -7,6 +7,7 @@ import { LoginPage } from './pages/LoginPage';
 import { CatalogPage } from './pages/CatalogPage';
 import { MyCoursesPage } from './pages/MyCoursesPage';
 import { LiveQueuePage } from './pages/LiveQueuePage';
+import { AdminDashboardPage } from './pages/AdminDashboardPage';
 
 // Main Layout Wrapper displaying Sidebar for authenticated pages
 const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -62,10 +63,7 @@ export const App: React.FC = () => {
               path="/admin/dashboard"
               element={
                 <ProtectedRoute adminOnly>
-                  <div className="p-8">
-                    <h1 className="text-2xl font-black text-gray-900">Admin Dashboard</h1>
-                    <p className="text-gray-500 text-sm mt-1">พร้อมสำหรับทำ UI Admin ใน Step 14</p>
-                  </div>
+                  <AdminDashboardPage />
                 </ProtectedRoute>
               }
             />

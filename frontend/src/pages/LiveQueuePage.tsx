@@ -75,13 +75,13 @@ export const LiveQueuePage: React.FC = () => {
   }, [user]);
 
   const activeQueuedCount = queueEvents.filter((ev) => ev.eventType === 'queued').length;
-  const currentPos = activeQueuedCount > 0 ? activeQueuedCount : 1;
+  const isQueueEmpty = activeQueuedCount === 0;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <HeaderBar />
 
-      {/* Page Title Section (Matching Image 3) */}
+      {/* Page Title Section */}
       <div className="mb-8">
         <h1 className="text-3xl font-black text-gray-900 tracking-tight">
           ลงทะเบียนเรียน & ติดตามคิว
@@ -89,8 +89,8 @@ export const LiveQueuePage: React.FC = () => {
         <p className="text-xs font-semibold text-gray-400 mt-1">ภาคการศึกษาที่ 2/2566</p>
       </div>
 
-      {/* Queue Status Box with Ring Indicator (Matching Image 3) */}
-      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-gray-100 shadow-md mb-8 flex flex-col md:flex-row items-center gap-6 md:gap-10 border-t-4 border-t-[#b83a00]">
+      {/* Queue Status Box with Ring Indicator */}
+      <div className={`bg-white p-6 sm:p-8 rounded-3xl border border-gray-100 shadow-md mb-8 flex flex-col md:flex-row items-center gap-6 md:gap-10 border-t-4 ${isQueueEmpty ? 'border-t-emerald-500' : 'border-t-[#b83a00]'}`}>
         {/* Ring Gauge */}
         <div className="relative w-32 h-32 flex items-center justify-center shrink-0">
           <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
@@ -102,8 +102,8 @@ export const LiveQueuePage: React.FC = () => {
               d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
             />
             <path
-              className="text-[#b83a00]"
-              strokeDasharray={activeQueuedCount > 0 ? "75, 100" : "100, 100"}
+              className={isQueueEmpty ? "text-emerald-500" : "text-[#b83a00]"}
+              strokeDasharray={isQueueEmpty ? "100, 100" : "75, 100"}
               strokeWidth="3.5"
               strokeLinecap="round"
               stroke="currentColor"
@@ -112,8 +112,12 @@ export const LiveQueuePage: React.FC = () => {
             />
           </svg>
           <div className="absolute flex flex-col items-center justify-center text-center">
-            <span className="text-3xl font-black text-gray-900">{currentPos}</span>
-            <span className="text-[10px] text-gray-400 font-bold">คิวปัจจุบัน</span>
+            <span className={`text-3xl font-black ${isQueueEmpty ? 'text-emerald-600' : 'text-gray-900'}`}>
+              {activeQueuedCount}
+            </span>
+            <span className="text-[10px] text-gray-400 font-bold">
+              {isQueueEmpty ? 'ไม่มีคิวค้าง' : 'คิวรอประมวลผล'}
+            </span>
           </div>
         </div>
 
@@ -122,9 +126,9 @@ export const LiveQueuePage: React.FC = () => {
           <h3 className="text-lg font-bold text-gray-900 mb-2">สถานะคิวของคุณ</h3>
           <p className="text-sm text-gray-600 leading-relaxed max-w-xl">
             คุณอยู่ในระบบประมวลผลการลงทะเบียนเรียนแบบ High-Concurrency (BullMQ + Redis Atomic Engine)
-            คาดว่าจะเสร็จสิ้นในอีกประมาณ{' '}
-            <span className="font-bold text-[#b83a00]">
-              {activeQueuedCount > 0 ? 'กำลังประมวลผล...' : 'ประมวลผลเรียบร้อยแล้ว'}
+            สถานะคิวขณะนี้:{' '}
+            <span className={`font-bold ${isQueueEmpty ? 'text-emerald-600' : 'text-[#b83a00]'}`}>
+              {isQueueEmpty ? 'ประมวลผลคำขอครบถ้วนแล้ว (ไม่มีคิวตกค้าง)' : `มีคำขอรอประมวลผล ${activeQueuedCount} รายการ...`}
             </span>
           </p>
           <p className="text-xs text-gray-400 mt-3 font-medium">

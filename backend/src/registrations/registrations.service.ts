@@ -134,27 +134,60 @@ export class RegistrationsService {
     return enriched;
   }
 
-  // Get active queue events for the student
+  // Get active queue & processing items for the student (active enrollments + pending queue items)
   async getActiveQueue(user: any) {
-    const events = await this.prisma.registrationEvent.findMany({
-      where: { studentId: user.id },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        studentId: user.id,
+        status: { in: ['confirmed', 'waitlisted'] },
+      },
+      include: {
+        section: {
+          include: {
+            course: true,
+          },
+        },
+      },
+      orderBy: { enrolledAt: 'desc' },
     });
 
-    // Fetch section and course info for events
-    const sectionIds = Array.from(new Set(events.map((ev) => ev.sectionId)));
-    const sections = await this.prisma.section.findMany({
+    const recentQueuedEvents = await this.prisma.registrationEvent.findMany({
+      where: {
+        studentId: user.id,
+        eventType: 'queued',
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    });
+
+    const enrolledSectionIds = new Set(enrollments.map((e) => e.sectionId));
+
+    const pendingQueuedEvents = recentQueuedEvents.filter(
+      (ev) => !enrolledSectionIds.has(ev.sectionId),
+    );
+
+    const sectionIds = Array.from(new Set(pendingQueuedEvents.map((ev) => ev.sectionId)));
+    const pendingSections = await this.prisma.section.findMany({
       where: { id: { in: sectionIds } },
       include: { course: true },
     });
+    const sectionMap = new Map(pendingSections.map((s) => [s.id, s]));
 
-    const sectionMap = new Map(sections.map((s) => [s.id, s]));
+    const mappedEnrollments = enrollments.map((e) => ({
+      id: e.id,
+      eventType: e.status,
+      createdAt: e.enrolledAt,
+      section: e.section,
+    }));
 
-    return events.map((ev) => ({
-      ...ev,
+    const mappedPending = pendingQueuedEvents.map((ev) => ({
+      id: ev.id.toString(),
+      eventType: 'queued',
+      createdAt: ev.createdAt,
       section: sectionMap.get(ev.sectionId),
     }));
+
+    return [...mappedPending, ...mappedEnrollments];
   }
 
   // Cancel Registration and Trigger Auto Re-allocation

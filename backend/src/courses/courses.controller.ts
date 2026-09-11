@@ -32,6 +32,13 @@ export class CoursesController {
     return this.coursesService.preloadSectionSeats(id);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @Get('admin/stats')
+  async getAdminStats() {
+    return this.coursesService.getAdminStats();
+  }
+
   // ---------------- STUDENT / PUBLIC ENDPOINTS ----------------
   @UseGuards(JwtAuthGuard)
   @Get('courses')
