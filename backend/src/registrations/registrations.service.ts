@@ -100,6 +100,63 @@ export class RegistrationsService {
     };
   }
 
+  // Get active student enrollments with live Redis waitlist position
+  async getMyEnrollments(user: any) {
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        studentId: user.id,
+        status: { in: ['confirmed', 'waitlisted'] },
+      },
+      include: {
+        section: {
+          include: {
+            course: true,
+          },
+        },
+      },
+      orderBy: { enrolledAt: 'desc' },
+    });
+
+    // Update waitlist position dynamically from Redis Sorted Set for waitlisted items
+    const enriched = await Promise.all(
+      enrollments.map(async (e) => {
+        if (e.status === 'waitlisted') {
+          const rank = await this.redisService
+            .getClient()
+            .zrank(`waitlist:${e.sectionId}`, user.id);
+          const currentPosition = rank !== null && rank !== undefined ? rank + 1 : e.waitlistPosition || 1;
+          return { ...e, waitlistPosition: currentPosition };
+        }
+        return e;
+      }),
+    );
+
+    return enriched;
+  }
+
+  // Get active queue events for the student
+  async getActiveQueue(user: any) {
+    const events = await this.prisma.registrationEvent.findMany({
+      where: { studentId: user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    });
+
+    // Fetch section and course info for events
+    const sectionIds = Array.from(new Set(events.map((ev) => ev.sectionId)));
+    const sections = await this.prisma.section.findMany({
+      where: { id: { in: sectionIds } },
+      include: { course: true },
+    });
+
+    const sectionMap = new Map(sections.map((s) => [s.id, s]));
+
+    return events.map((ev) => ({
+      ...ev,
+      section: sectionMap.get(ev.sectionId),
+    }));
+  }
+
   // Cancel Registration and Trigger Auto Re-allocation
   async cancelRegistration(user: any, dto: CancelRegistrationDto) {
     const enrollment = await this.prisma.enrollment.findUnique({

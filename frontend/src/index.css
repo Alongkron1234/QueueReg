@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  --color-primary: #b83a00;
+  --color-primary-hover: #992d00;
+  --color-secondary: #ff8c00;
+  --color-surface: #f4f4f8;
+  --color-surface-card: #ffffff;
+  --font-family: 'Be Vietnam Pro', sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family);
+  background-color: var(--color-surface);
+  color: #1a1b20;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+.gradient-terracotta {
+  background: linear-gradient(135deg, #b83a00 0%, #8c2800 100%);
+}
+
+.gradient-orange-pill {
+  background: linear-gradient(135deg, #ff8c00 0%, #ff6f00 100%);
+}
+
+.gradient-brand-text {
+  background: linear-gradient(135deg, #b83a00 0%, #ff8c00 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}

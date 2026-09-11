@@ -25,7 +25,7 @@ export class RegistrationProcessor extends WorkerHost {
       `⚙️ Processing Job [${job.id}] | StudentId: ${studentId} | SectionId: ${sectionId}`,
     );
 
-    // 1. Check duplicate registration
+    // 1. Check duplicate registration (only block if already active confirmed or waitlisted)
     const existingEnrollment = await this.prisma.enrollment.findUnique({
       where: {
         studentId_sectionId: {
@@ -35,9 +35,9 @@ export class RegistrationProcessor extends WorkerHost {
       },
     });
 
-    if (existingEnrollment) {
+    if (existingEnrollment && existingEnrollment.status !== 'cancelled') {
       this.logger.warn(
-        `⚠️ Duplicate registration attempt by student: ${studentId} for section: ${sectionId}`,
+        `⚠️ Duplicate active registration attempt by student: ${studentId} for section: ${sectionId}`,
       );
 
       await this.prisma.registrationEvent.create({
@@ -69,12 +69,19 @@ export class RegistrationProcessor extends WorkerHost {
 
     // 3. Case A: Seats available (remainingSeats >= 0)
     if (remainingSeats >= 0) {
-      // Create confirmed enrollment in PostgreSQL
-      const enrollment = await this.prisma.enrollment.create({
-        data: {
+      // Upsert confirmed enrollment in PostgreSQL (supports re-registration after cancel)
+      const enrollment = await this.prisma.enrollment.upsert({
+        where: {
+          studentId_sectionId: { studentId, sectionId },
+        },
+        create: {
           studentId,
           sectionId,
           status: 'confirmed',
+        },
+        update: {
+          status: 'confirmed',
+          waitlistPosition: null,
         },
       });
 
@@ -132,11 +139,18 @@ export class RegistrationProcessor extends WorkerHost {
     // Get current waitlist position
     const waitlistPosition = await this.redisService.zcard(`waitlist:${sectionId}`);
 
-    // Create waitlisted enrollment in PostgreSQL
-    const enrollment = await this.prisma.enrollment.create({
-      data: {
+    // Upsert waitlisted enrollment in PostgreSQL
+    const enrollment = await this.prisma.enrollment.upsert({
+      where: {
+        studentId_sectionId: { studentId, sectionId },
+      },
+      create: {
         studentId,
         sectionId,
+        status: 'waitlisted',
+        waitlistPosition,
+      },
+      update: {
         status: 'waitlisted',
         waitlistPosition,
       },
