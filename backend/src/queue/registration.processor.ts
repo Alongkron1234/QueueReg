@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { EventsGateway } from '../events/events.gateway';
 import { RegistrationJobData } from './queue.producer.service';
 
 @Processor('registration_queue')
@@ -12,6 +13,7 @@ export class RegistrationProcessor extends WorkerHost {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
+    private readonly eventsGateway: EventsGateway,
   ) {
     super();
   }
@@ -51,6 +53,14 @@ export class RegistrationProcessor extends WorkerHost {
         },
       });
 
+      // Emit WebSocket Event to Student Room
+      this.eventsGateway.sendToStudent(studentId, 'registration_result', {
+        status: 'rejected',
+        requestId,
+        sectionId,
+        reason: 'นักศึกษาเคยยื่นลงทะเบียนวิชานี้ไปแล้ว',
+      });
+
       return { status: 'rejected', reason: 'Duplicate registration' };
     }
 
@@ -86,6 +96,21 @@ export class RegistrationProcessor extends WorkerHost {
       this.logger.log(
         `✅ Registration Confirmed | StudentId: ${studentId} | SectionId: ${sectionId} | RemainingSeats: ${remainingSeats}`,
       );
+
+      // Emit WebSocket Event to Student Room (Personal Result)
+      this.eventsGateway.sendToStudent(studentId, 'registration_result', {
+        status: 'confirmed',
+        requestId,
+        sectionId,
+        enrollmentId: enrollment.id,
+        confirmedAt: new Date().toISOString(),
+      });
+
+      // Emit WebSocket Event to Section Room (Live Seat Count Update)
+      this.eventsGateway.sendToSection(sectionId, 'seat_count_updated', {
+        sectionId,
+        remainingSeats,
+      });
 
       return {
         status: 'confirmed',
@@ -135,6 +160,16 @@ export class RegistrationProcessor extends WorkerHost {
     this.logger.log(
       `⏳ Student Waitlisted | StudentId: ${studentId} | SectionId: ${sectionId} | WaitlistPosition: ${waitlistPosition}`,
     );
+
+    // Emit WebSocket Event to Student Room (Personal Waitlist Result)
+    this.eventsGateway.sendToStudent(studentId, 'registration_result', {
+      status: 'waitlisted',
+      requestId,
+      sectionId,
+      enrollmentId: enrollment.id,
+      waitlistPosition,
+      waitlistedAt: new Date().toISOString(),
+    });
 
     return {
       status: 'waitlisted',
