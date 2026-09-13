@@ -34,6 +34,20 @@ export class CoursesController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Post('admin/sections/:id/reconcile')
+  async reconcileSectionSeats(@Param('id') id: string) {
+    return this.coursesService.reconcileSectionSeats(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @Post('admin/sections/reconcile-all')
+  async reconcileAllSections() {
+    return this.coursesService.reconcileAllSections();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @Get('admin/stats')
   async getAdminStats() {
     return this.coursesService.getAdminStats();

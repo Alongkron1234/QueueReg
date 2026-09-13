@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { EventsGateway } from '../events/events.gateway';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { CreateSectionDto } from './dto/create-section.dto';
 
@@ -14,6 +15,7 @@ export class CoursesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
+    private readonly eventsGateway: EventsGateway,
   ) {}
 
   async createCourse(dto: CreateCourseDto) {
@@ -247,6 +249,72 @@ export class CoursesService {
       allCourses: allCoursesList,
       sectionMetrics,
       auditLogs,
+    };
+  }
+
+  // Reconcile seats for a single section between Postgres DB (Source of Truth) and Redis RAM
+  async reconcileSectionSeats(sectionId: string) {
+    const section = await this.prisma.section.findUnique({
+      where: { id: sectionId },
+    });
+
+    if (!section) {
+      throw new NotFoundException(`ไม่พบ Section ที่มี ID ${sectionId}`);
+    }
+
+    // 1. Query exact confirmed count from Postgres DB (Source of Truth)
+    const confirmedCount = await this.prisma.enrollment.count({
+      where: {
+        sectionId,
+        status: 'confirmed',
+      },
+    });
+
+    // 2. Compute exact remaining seats
+    const calculatedRemainingSeats = Math.max(0, section.maxCapacity - confirmedCount);
+
+    // 3. Fetch previous Redis seat count for audit comparison
+    const rawPrevious = await this.redisService.get(`seat_count:${sectionId}`);
+    const previousRedisSeats = rawPrevious !== null ? parseInt(rawPrevious, 10) : null;
+
+    // 4. Overwrite Redis key with exact calculated remaining seats
+    await this.redisService.set(`seat_count:${sectionId}`, calculatedRemainingSeats);
+
+    // 5. Broadcast real-time WebSocket update to clients
+    this.eventsGateway.sendToSection(sectionId, 'seat_count_updated', {
+      sectionId,
+      remainingSeats: calculatedRemainingSeats,
+    });
+    this.eventsGateway.broadcast('seat_count_updated', {
+      sectionId,
+      remainingSeats: calculatedRemainingSeats,
+    });
+
+    return {
+      message: 'กระทบยอดข้อมูล (Reconciliation) สำเร็จ',
+      sectionId: section.id,
+      sectionCode: section.sectionCode,
+      maxCapacity: section.maxCapacity,
+      confirmedCount,
+      previousRedisSeats,
+      newRedisSeats: calculatedRemainingSeats,
+    };
+  }
+
+  // Reconcile all sections in batch
+  async reconcileAllSections() {
+    const allSections = await this.prisma.section.findMany({
+      include: { course: true },
+    });
+
+    const results = await Promise.all(
+      allSections.map((sec) => this.reconcileSectionSeats(sec.id)),
+    );
+
+    return {
+      message: `กระทบยอดข้อมูลทั้งหมด ${results.length} Sections เรียบร้อยแล้ว`,
+      totalSections: results.length,
+      details: results,
     };
   }
 }

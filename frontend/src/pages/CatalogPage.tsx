@@ -34,6 +34,41 @@ interface Course {
   sections: Section[];
 }
 
+const formatRemainingDays = (closeAtStr?: string) => {
+  if (!closeAtStr) return null;
+  const now = new Date();
+  const closeAt = new Date(closeAtStr);
+  const diffMs = closeAt.getTime() - now.getTime();
+
+  if (diffMs <= 0) {
+    return { isClosed: true, text: 'ปิดลงทะเบียนแล้ว', colorClass: 'text-red-500 bg-red-50 border-red-100' };
+  }
+
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffDays >= 1) {
+    return {
+      isClosed: false,
+      text: `เหลืออีก ${diffDays} วัน ถึงปิดลงทะเบียน`,
+      colorClass: 'text-amber-700 bg-amber-50 border-amber-100',
+    };
+  } else if (diffHours >= 1) {
+    return {
+      isClosed: false,
+      text: `เหลืออีก ${diffHours} ชั่วโมง ถึงปิดลงทะเบียน`,
+      colorClass: 'text-orange-700 bg-orange-50 border-orange-100',
+    };
+  } else {
+    const diffMinutes = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+    return {
+      isClosed: false,
+      text: `เหลืออีก ${diffMinutes} นาที ถึงปิดลงทะเบียน`,
+      colorClass: 'text-red-600 bg-red-50 border-red-200 animate-pulse',
+    };
+  }
+};
+
 export const CatalogPage: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -265,6 +300,8 @@ export const CatalogPage: React.FC = () => {
           {filteredCourses.map((course) => {
             const activeSectionId = selectedSections[course.id] || course.sections[0]?.id;
             const section = course.sections.find((s) => s.id === activeSectionId) || course.sections[0];
+            const countdown = formatRemainingDays(section?.registrationCloseAt);
+            const isRegistrationClosed = countdown?.isClosed ?? false;
             const remaining = section?.remainingSeats ?? section?.maxCapacity ?? 0;
             const isFull = remaining <= 0;
 
@@ -339,12 +376,30 @@ export const CatalogPage: React.FC = () => {
                           : `เหลือ ${remaining} จาก ${section?.maxCapacity} ที่นั่ง`}
                       </span>
                     </div>
+
+                    {/* Registration Countdown Badge */}
+                    {countdown && (
+                      <div
+                        className={`mt-2 px-3 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1.5 ${countdown.colorClass}`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5 shrink-0 text-orange-500" />
+                        <span>{countdown.text}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Action Button */}
                 <div>
-                  {enrolledStatusMap[section?.id] === 'confirmed' ? (
+                  {isRegistrationClosed ? (
+                    <button
+                      disabled
+                      className="w-full py-3.5 rounded-2xl bg-gray-100 text-gray-500 border border-gray-200 font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed opacity-80"
+                    >
+                      <XCircle className="w-4 h-4 text-gray-400" />
+                      <span>ปิดลงทะเบียนแล้ว (Closed)</span>
+                    </button>
+                  ) : enrolledStatusMap[section?.id] === 'confirmed' ? (
                     <button
                       disabled
                       className="w-full py-3.5 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed opacity-90 shadow-sm"
