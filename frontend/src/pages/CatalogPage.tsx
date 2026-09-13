@@ -43,6 +43,7 @@ export const CatalogPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [registeringSectionId, setRegisteringSectionId] = useState<string | null>(null);
   const [selectedSections, setSelectedSections] = useState<Record<string, string>>({});
+  const [enrolledStatusMap, setEnrolledStatusMap] = useState<Record<string, 'confirmed' | 'waitlisted'>>({});
 
   // Live Queue Modal State
   const [showQueueModal, setShowQueueModal] = useState(false);
@@ -52,6 +53,23 @@ export const CatalogPage: React.FC = () => {
 
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  // Load User Enrollments to mark already registered sections
+  const fetchUserEnrollments = async () => {
+    if (!user) return;
+    try {
+      const res = await api.get('/registrations/my-enrollments');
+      const statusMap: Record<string, 'confirmed' | 'waitlisted'> = {};
+      res.data.forEach((e: any) => {
+        if (e.status === 'confirmed' || e.status === 'waitlisted') {
+          statusMap[e.sectionId] = e.status;
+        }
+      });
+      setEnrolledStatusMap(statusMap);
+    } catch (err) {
+      console.error('Error fetching user enrollments:', err);
+    }
+  };
 
   // Load Courses
   const fetchCourses = async () => {
@@ -81,7 +99,8 @@ export const CatalogPage: React.FC = () => {
 
   useEffect(() => {
     fetchCourses();
-  }, []);
+    fetchUserEnrollments();
+  }, [user]);
 
   // Listen to Real-time WebSocket for Seat Updates & Personal Registration Result
   useEffect(() => {
@@ -109,12 +128,14 @@ export const CatalogPage: React.FC = () => {
           ),
         })),
       );
+      fetchUserEnrollments();
     });
 
     // Handle Personal Registration Result
     socket.on('registration_result', (data: any) => {
       setQueueStatus(data.status);
       setQueueDetails(data);
+      fetchUserEnrollments();
     });
 
     return () => {
@@ -323,7 +344,23 @@ export const CatalogPage: React.FC = () => {
 
                 {/* Action Button */}
                 <div>
-                  {isFull ? (
+                  {enrolledStatusMap[section?.id] === 'confirmed' ? (
+                    <button
+                      disabled
+                      className="w-full py-3.5 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed opacity-90 shadow-sm"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>ลงทะเบียนสำเร็จแล้ว (Enrolled)</span>
+                    </button>
+                  ) : enrolledStatusMap[section?.id] === 'waitlisted' ? (
+                    <button
+                      disabled
+                      className="w-full py-3.5 rounded-2xl bg-amber-50 text-amber-800 border border-amber-200 font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed opacity-90 shadow-sm"
+                    >
+                      <Clock className="w-4 h-4 text-amber-600" />
+                      <span>อยู่ในคิวสำรองแล้ว (Waitlisted)</span>
+                    </button>
+                  ) : isFull ? (
                     <button
                       onClick={() => handleRegister(section.id)}
                       className="w-full py-3.5 rounded-2xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-sm flex items-center justify-center gap-2 transition-colors border border-amber-200"

@@ -151,20 +151,45 @@ export class RegistrationsService {
       orderBy: { enrolledAt: 'desc' },
     });
 
-    const recentQueuedEvents = await this.prisma.registrationEvent.findMany({
+    // Fetch all recent registration events for this student
+    const allEvents = await this.prisma.registrationEvent.findMany({
       where: {
         studentId: user.id,
-        eventType: 'queued',
       },
       orderBy: { createdAt: 'desc' },
-      take: 5,
+      take: 30,
     });
 
-    const enrolledSectionIds = new Set(enrollments.map((e) => e.sectionId));
+    // Find requestIds and section timestamps that have terminal outcomes (confirmed, waitlisted, rejected)
+    const finishedRequestIds = new Set<string>();
+    const finishedSectionTimestamps = new Map<string, Date>();
 
-    const pendingQueuedEvents = recentQueuedEvents.filter(
-      (ev) => !enrolledSectionIds.has(ev.sectionId),
-    );
+    allEvents.forEach((ev) => {
+      if (['confirmed', 'waitlisted', 'rejected'].includes(ev.eventType)) {
+        const reqId = (ev.detail as any)?.requestId;
+        if (reqId) finishedRequestIds.add(reqId);
+
+        const existingTime = finishedSectionTimestamps.get(ev.sectionId);
+        if (!existingTime || ev.createdAt > existingTime) {
+          finishedSectionTimestamps.set(ev.sectionId, ev.createdAt);
+        }
+      }
+    });
+
+    // Filter queued events: only keep those that do NOT have a finished outcome
+    const recentQueuedEvents = allEvents.filter((ev) => ev.eventType === 'queued');
+
+    const pendingQueuedEvents = recentQueuedEvents.filter((ev) => {
+      const reqId = (ev.detail as any)?.requestId;
+      if (reqId && finishedRequestIds.has(reqId)) {
+        return false; // Already processed
+      }
+      const finishedTime = finishedSectionTimestamps.get(ev.sectionId);
+      if (finishedTime && finishedTime >= ev.createdAt) {
+        return false; // Already finished by subsequent event
+      }
+      return true;
+    });
 
     const sectionIds = Array.from(new Set(pendingQueuedEvents.map((ev) => ev.sectionId)));
     const pendingSections = await this.prisma.section.findMany({
