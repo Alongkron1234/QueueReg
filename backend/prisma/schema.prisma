@@ -38,6 +38,7 @@ model Section {
   courseId            String   @map("course_id") @db.Uuid
   sectionCode         String   @map("section_code") @db.VarChar(10)
   instructorName      String?  @map("instructor_name") @db.VarChar(255)
+  dayTime             String?  @default("จ. พ. 09:00 - 10:30 น.") @map("day_time") @db.VarChar(100)
   maxCapacity         Int      @map("max_capacity")
   registrationOpenAt  DateTime @map("registration_open_at") @db.Timestamptz()
   registrationCloseAt DateTime @map("registration_close_at") @db.Timestamptz()

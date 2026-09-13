@@ -72,6 +72,7 @@ export class CoursesService {
         courseId: dto.courseId,
         sectionCode: dto.sectionCode,
         instructorName: dto.instructorName,
+        dayTime: dto.dayTime || 'จ. พ. 09:00 - 10:30 น.',
         maxCapacity: dto.maxCapacity,
         registrationOpenAt: openAt,
         registrationCloseAt: closeAt,
@@ -153,6 +154,99 @@ export class CoursesService {
     return {
       sectionId,
       remainingSeats: parseInt(seats, 10),
+    };
+  }
+
+  // Get Admin Dashboard System Monitoring Statistics
+  async getAdminStats() {
+    const [
+      totalStudents,
+      totalCourses,
+      totalSections,
+      totalConfirmed,
+      totalWaitlisted,
+      allSections,
+      allCoursesList,
+      recentEvents,
+    ] = await Promise.all([
+      this.prisma.student.count({ where: { role: 'student' } }),
+      this.prisma.course.count(),
+      this.prisma.section.count(),
+      this.prisma.enrollment.count({ where: { status: 'confirmed' } }),
+      this.prisma.enrollment.count({ where: { status: 'waitlisted' } }),
+      this.prisma.section.findMany({
+        include: { course: true },
+        orderBy: { sectionCode: 'asc' },
+      }),
+      this.prisma.course.findMany({
+        orderBy: { courseCode: 'asc' },
+      }),
+      this.prisma.registrationEvent.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 25,
+      }),
+    ]);
+
+    // Enrich sections with live Redis seats and waitlist count
+    const sectionMetrics = await Promise.all(
+      allSections.map(async (sec) => {
+        const rawSeats = await this.redisService.get(`seat_count:${sec.id}`);
+        const waitlistCount = await this.redisService.zcard(`waitlist:${sec.id}`);
+        const remainingSeats =
+          rawSeats !== null ? parseInt(rawSeats, 10) : sec.maxCapacity;
+
+        return {
+          id: sec.id,
+          courseId: sec.courseId,
+          courseCode: sec.course.courseCode,
+          courseName: sec.course.courseName,
+          credits: sec.course.credits,
+          sectionCode: sec.sectionCode,
+          instructorName: sec.instructorName,
+          dayTime: sec.dayTime,
+          registrationOpenAt: sec.registrationOpenAt,
+          registrationCloseAt: sec.registrationCloseAt,
+          maxCapacity: sec.maxCapacity,
+          remainingSeats,
+          waitlistCount,
+        };
+      }),
+    );
+
+    // Fetch section details for audit logs
+    const sectionIds = Array.from(new Set(recentEvents.map((e) => e.sectionId)));
+    const sectionsForLogs = await this.prisma.section.findMany({
+      where: { id: { in: sectionIds } },
+      include: { course: true },
+    });
+    const sectionMap = new Map(sectionsForLogs.map((s) => [s.id, s]));
+
+    const auditLogs = recentEvents.map((ev) => {
+      const sec = sectionMap.get(ev.sectionId);
+      return {
+        id: ev.id.toString(),
+        studentId: ev.studentId,
+        sectionId: ev.sectionId,
+        eventType: ev.eventType,
+        detail: ev.detail,
+        createdAt: ev.createdAt,
+        courseCode: sec?.course?.courseCode || 'UNKNOWN',
+        courseName: sec?.course?.courseName || 'N/A',
+        sectionCode: sec?.sectionCode || '01',
+      };
+    });
+
+    return {
+      summary: {
+        totalStudents,
+        totalCourses,
+        totalSections,
+        totalConfirmed,
+        totalWaitlisted,
+      },
+      allCourses: allCoursesList,
+      sectionMetrics,
+      auditLogs,
     };
   }
 }

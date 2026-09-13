@@ -32,6 +32,18 @@ export class RegistrationsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('my-enrollments')
+  async getMyEnrollments(@Request() req: any) {
+    return this.registrationsService.getMyEnrollments(req.user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('active-queue')
+  async getActiveQueue(@Request() req: any) {
+    return this.registrationsService.getActiveQueue(req.user);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get(':requestId/status')
   async getRegistrationStatus(
     @Request() req: any,

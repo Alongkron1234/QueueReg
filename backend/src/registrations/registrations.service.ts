@@ -100,6 +100,121 @@ export class RegistrationsService {
     };
   }
 
+  // Get active student enrollments with live Redis waitlist position
+  async getMyEnrollments(user: any) {
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        studentId: user.id,
+        status: { in: ['confirmed', 'waitlisted'] },
+      },
+      include: {
+        section: {
+          include: {
+            course: true,
+          },
+        },
+      },
+      orderBy: { enrolledAt: 'desc' },
+    });
+
+    // Update waitlist position dynamically from Redis Sorted Set for waitlisted items
+    const enriched = await Promise.all(
+      enrollments.map(async (e) => {
+        if (e.status === 'waitlisted') {
+          const rank = await this.redisService
+            .getClient()
+            .zrank(`waitlist:${e.sectionId}`, user.id);
+          const currentPosition = rank !== null && rank !== undefined ? rank + 1 : e.waitlistPosition || 1;
+          return { ...e, waitlistPosition: currentPosition };
+        }
+        return e;
+      }),
+    );
+
+    return enriched;
+  }
+
+  // Get active queue & processing items for the student (active enrollments + pending queue items)
+  async getActiveQueue(user: any) {
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        studentId: user.id,
+        status: { in: ['confirmed', 'waitlisted'] },
+      },
+      include: {
+        section: {
+          include: {
+            course: true,
+          },
+        },
+      },
+      orderBy: { enrolledAt: 'desc' },
+    });
+
+    // Fetch all recent registration events for this student
+    const allEvents = await this.prisma.registrationEvent.findMany({
+      where: {
+        studentId: user.id,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+    });
+
+    // Find requestIds and section timestamps that have terminal outcomes (confirmed, waitlisted, rejected)
+    const finishedRequestIds = new Set<string>();
+    const finishedSectionTimestamps = new Map<string, Date>();
+
+    allEvents.forEach((ev) => {
+      if (['confirmed', 'waitlisted', 'rejected'].includes(ev.eventType)) {
+        const reqId = (ev.detail as any)?.requestId;
+        if (reqId) finishedRequestIds.add(reqId);
+
+        const existingTime = finishedSectionTimestamps.get(ev.sectionId);
+        if (!existingTime || ev.createdAt > existingTime) {
+          finishedSectionTimestamps.set(ev.sectionId, ev.createdAt);
+        }
+      }
+    });
+
+    // Filter queued events: only keep those that do NOT have a finished outcome
+    const recentQueuedEvents = allEvents.filter((ev) => ev.eventType === 'queued');
+
+    const pendingQueuedEvents = recentQueuedEvents.filter((ev) => {
+      const reqId = (ev.detail as any)?.requestId;
+      if (reqId && finishedRequestIds.has(reqId)) {
+        return false; // Already processed
+      }
+      const finishedTime = finishedSectionTimestamps.get(ev.sectionId);
+      if (finishedTime && finishedTime >= ev.createdAt) {
+        return false; // Already finished by subsequent event
+      }
+      return true;
+    });
+
+    const sectionIds = Array.from(new Set(pendingQueuedEvents.map((ev) => ev.sectionId)));
+    const pendingSections = await this.prisma.section.findMany({
+      where: { id: { in: sectionIds } },
+      include: { course: true },
+    });
+    const sectionMap = new Map(pendingSections.map((s) => [s.id, s]));
+
+    const mappedEnrollments = enrollments.map((e) => ({
+      id: e.id,
+      eventType: e.status,
+      createdAt: e.enrolledAt,
+      section: e.section,
+    }));
+
+    const mappedPending = pendingQueuedEvents.map((ev) => ({
+      id: ev.id.toString(),
+      eventType: 'queued',
+      createdAt: ev.createdAt,
+      section: sectionMap.get(ev.sectionId),
+    }));
+
+    return [...mappedPending, ...mappedEnrollments];
+  }
+
   // Cancel Registration and Trigger Auto Re-allocation
   async cancelRegistration(user: any, dto: CancelRegistrationDto) {
     const enrollment = await this.prisma.enrollment.findUnique({

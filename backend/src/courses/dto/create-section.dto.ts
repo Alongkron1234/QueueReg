@@ -13,6 +13,10 @@ export class CreateSectionDto {
   @IsOptional()
   instructorName?: string;
 
+  @IsString()
+  @IsOptional()
+  dayTime?: string;
+
   @IsInt()
   @Min(1, { message: 'จำนวนที่นั่งต้องอย่างน้อย 1 ที่นั่ง' })
   maxCapacity: number;
