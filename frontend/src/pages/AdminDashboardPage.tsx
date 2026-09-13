@@ -67,6 +67,8 @@ export const AdminDashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [preloadingSectionId, setPreloadingSectionId] = useState<string | null>(null);
+  const [reconcilingSectionId, setReconcilingSectionId] = useState<string | null>(null);
+  const [reconcilingAll, setReconcilingAll] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Modal State for Create Course & Section
@@ -176,6 +178,49 @@ export const AdminDashboardPage: React.FC = () => {
       });
     } finally {
       setPreloadingSectionId(null);
+    }
+  };
+
+  // Reconcile Seats between Postgres DB (Source of Truth) and Redis RAM
+  const handleReconcileSection = async (sectionId: string) => {
+    setReconcilingSectionId(sectionId);
+    setMessage(null);
+
+    try {
+      const res = await api.post(`/admin/sections/${sectionId}/reconcile`);
+      setMessage({
+        type: 'success',
+        text: `กระทบยอดสำเร็จ! (DB Confirmed: ${res.data.confirmedCount}/${res.data.maxCapacity} -> Redis RAM ตั้งค่าที่นั่งคงเหลือใหม่เป็น: ${res.data.newRedisSeats})`,
+      });
+      fetchStats();
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'ไม่สามารถกระทบยอดที่นั่งได้',
+      });
+    } finally {
+      setReconcilingSectionId(null);
+    }
+  };
+
+  const handleReconcileAll = async () => {
+    setReconcilingAll(true);
+    setMessage(null);
+
+    try {
+      const res = await api.post('/admin/sections/reconcile-all');
+      setMessage({
+        type: 'success',
+        text: res.data.message || 'กระทบยอดข้อมูลทั้งหมดเรียบร้อยแล้ว',
+      });
+      fetchStats();
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'ไม่สามารถกระทบยอดที่นั่งทั้งหมดได้',
+      });
+    } finally {
+      setReconcilingAll(false);
     }
   };
 
@@ -355,18 +400,30 @@ export const AdminDashboardPage: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                onClick={() => {
-                  if (stats?.allCourses.length) {
-                    setSelectedCourseId(stats.allCourses[0].id);
-                  }
-                  setShowSectionModal(true);
-                }}
-                className="py-2 px-3.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#b83a00] font-bold text-xs flex items-center gap-1.5 transition-colors"
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>เพิ่ม Section</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleReconcileAll}
+                  disabled={reconcilingAll}
+                  className="py-2 px-3.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  title="กระทบยอดข้อมูล Redis RAM ทั้งหมดให้ตรงกับ PostgreSQL"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${reconcilingAll ? 'animate-spin' : ''}`} />
+                  <span>กระทบยอดทั้งหมด (Reconcile All)</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (stats?.allCourses.length) {
+                      setSelectedCourseId(stats.allCourses[0].id);
+                    }
+                    setShowSectionModal(true);
+                  }}
+                  className="py-2 px-3.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#b83a00] font-bold text-xs flex items-center gap-1.5 transition-colors"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>เพิ่ม Section</span>
+                </button>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -415,20 +472,38 @@ export const AdminDashboardPage: React.FC = () => {
                           </span>
                         </td>
                         <td className="py-4 px-4 text-right">
-                          <button
-                            onClick={() => handlePreloadSeats(sec.id)}
-                            disabled={preloadingSectionId === sec.id}
-                            className="py-2 px-3 rounded-xl bg-gradient-to-r from-[#b83a00] to-[#992d00] text-white font-bold text-xs hover:from-[#a03200] hover:to-[#802400] transition-all shadow-sm flex items-center gap-1.5 ml-auto disabled:opacity-50"
-                          >
-                            {preloadingSectionId === sec.id ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <>
-                                <RefreshCw className="w-3.5 h-3.5" />
-                                <span>Pre-load Seats</span>
-                              </>
-                            )}
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleReconcileSection(sec.id)}
+                              disabled={reconcilingSectionId === sec.id}
+                              className="py-2 px-3 rounded-xl bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                              title="กระทบยอดข้อมูลระหว่าง PostgreSQL และ Redis"
+                            >
+                              {reconcilingSectionId === sec.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <>
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  <span>Reconcile Sync DB</span>
+                                </>
+                              )}
+                            </button>
+
+                            <button
+                              onClick={() => handlePreloadSeats(sec.id)}
+                              disabled={preloadingSectionId === sec.id}
+                              className="py-2 px-3 rounded-xl bg-gradient-to-r from-[#b83a00] to-[#992d00] text-white font-bold text-xs hover:from-[#a03200] hover:to-[#802400] transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {preloadingSectionId === sec.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <>
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  <span>Pre-load Seats</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
